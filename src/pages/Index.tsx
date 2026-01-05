@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { toast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
 
 interface Player {
@@ -20,6 +22,7 @@ interface Player {
 }
 
 interface Team {
+  id: string;
   name: string;
   color: string;
   players: string[];
@@ -35,9 +38,17 @@ interface Game {
 interface Task {
   id: string;
   name: string;
+  description: string;
   points: number;
   gameId: string;
 }
+
+const teamColors = [
+  { name: 'Красные', color: '#ef4444', bgClass: 'bg-red-500' },
+  { name: 'Синие', color: '#3b82f6', bgClass: 'bg-blue-500' },
+  { name: 'Зелёные', color: '#22c55e', bgClass: 'bg-green-500' },
+  { name: 'Жёлтые', color: '#eab308', bgClass: 'bg-yellow-500' },
+];
 
 const mockPlayers: Player[] = [
   { id: '1', name: 'Дмитрий Ильин', avatar: '', points: 25000 },
@@ -45,6 +56,9 @@ const mockPlayers: Player[] = [
   { id: '3', name: 'Сергей Акула', avatar: '', points: 12000 },
   { id: '4', name: 'Иван Дракон', avatar: '', points: 8000 },
   { id: '5', name: 'Мария Феникс', avatar: '', points: 5500 },
+  { id: '6', name: 'Павел Снайпер', avatar: '', points: 4200 },
+  { id: '7', name: 'Анна Стрелок', avatar: '', points: 3800 },
+  { id: '8', name: 'Николай Тень', avatar: '', points: 2100 },
 ];
 
 const Index = () => {
@@ -54,6 +68,19 @@ const Index = () => {
   const [currentPlayer] = useState<Player>(mockPlayers[0]);
   const [isAdmin] = useState(true);
 
+  const [newGameName, setNewGameName] = useState('');
+  const [newGameTeamsCount, setNewGameTeamsCount] = useState('2');
+  const [isCreateGameOpen, setIsCreateGameOpen] = useState(false);
+
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  const [isManageGameOpen, setIsManageGameOpen] = useState(false);
+  const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
+
+  const [newTaskName, setNewTaskName] = useState('');
+  const [newTaskPoints, setNewTaskPoints] = useState('');
+  const [newTaskDescription, setNewTaskDescription] = useState('');
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+
   const getRankIcon = (points: number) => {
     if (points >= 25000) return '👑🔥';
     if (points >= 20000) return '💀👑';
@@ -61,6 +88,157 @@ const Index = () => {
     if (points >= 10000) return '🦈';
     if (points >= 5000) return '🐺';
     return '⚔️';
+  };
+
+  const createGame = () => {
+    if (!newGameName.trim()) {
+      toast({ title: 'Ошибка', description: 'Введите название игры', variant: 'destructive' });
+      return;
+    }
+
+    const teamsCount = parseInt(newGameTeamsCount);
+    const newTeams: Team[] = [];
+    
+    for (let i = 0; i < teamsCount; i++) {
+      newTeams.push({
+        id: `team-${Date.now()}-${i}`,
+        name: teamColors[i].name,
+        color: teamColors[i].color,
+        players: [],
+      });
+    }
+
+    const newGame: Game = {
+      id: `game-${Date.now()}`,
+      name: newGameName,
+      teams: newTeams,
+      status: 'active',
+    };
+
+    setGames([...games, newGame]);
+    setNewGameName('');
+    setNewGameTeamsCount('2');
+    setIsCreateGameOpen(false);
+    toast({ title: 'Игра создана!', description: `"${newGameName}" готова к началу` });
+  };
+
+  const addPlayersToGame = (gameId: string, teamId: string) => {
+    if (selectedPlayers.length === 0) {
+      toast({ title: 'Ошибка', description: 'Выберите игроков', variant: 'destructive' });
+      return;
+    }
+
+    setGames(games.map(game => {
+      if (game.id === gameId) {
+        return {
+          ...game,
+          teams: game.teams.map(team => {
+            if (team.id === teamId) {
+              return {
+                ...team,
+                players: [...new Set([...team.players, ...selectedPlayers])],
+              };
+            }
+            return team;
+          }),
+        };
+      }
+      return game;
+    }));
+
+    setSelectedPlayers([]);
+    toast({ title: 'Игроки добавлены!', description: `${selectedPlayers.length} игроков добавлено в команду` });
+  };
+
+  const removePlayerFromTeam = (gameId: string, teamId: string, playerId: string) => {
+    setGames(games.map(game => {
+      if (game.id === gameId) {
+        return {
+          ...game,
+          teams: game.teams.map(team => {
+            if (team.id === teamId) {
+              return {
+                ...team,
+                players: team.players.filter(p => p !== playerId),
+              };
+            }
+            return team;
+          }),
+        };
+      }
+      return game;
+    }));
+  };
+
+  const finishGame = (gameId: string, winnerTeamId: string) => {
+    const game = games.find(g => g.id === gameId);
+    if (!game) return;
+
+    const winnerTeam = game.teams.find(t => t.id === winnerTeamId);
+    const loserTeams = game.teams.filter(t => t.id !== winnerTeamId);
+
+    if (!winnerTeam) return;
+
+    const loserPlayerIds = loserTeams.flatMap(t => t.players);
+    const loserPlayers = players.filter(p => loserPlayerIds.includes(p.id));
+
+    const totalLoserPoints = loserPlayers.reduce((sum, p) => sum + p.points, 0);
+    const pointsPerWinner = Math.floor((totalLoserPoints * 0.1) / winnerTeam.players.length);
+
+    setPlayers(players.map(player => {
+      if (winnerTeam.players.includes(player.id)) {
+        return { ...player, points: player.points + pointsPerWinner };
+      }
+      if (loserPlayerIds.includes(player.id)) {
+        return { ...player, points: Math.max(0, player.points - Math.floor(player.points * 0.1)) };
+      }
+      return player;
+    }));
+
+    setGames(games.filter(g => g.id !== gameId));
+    toast({ 
+      title: '🏆 Игра завершена!', 
+      description: `${winnerTeam.name} победили! Каждый победитель получил +${pointsPerWinner} XP` 
+    });
+  };
+
+  const createTask = () => {
+    if (!newTaskName.trim() || !newTaskPoints.trim()) {
+      toast({ title: 'Ошибка', description: 'Заполните все поля', variant: 'destructive' });
+      return;
+    }
+
+    const newTask: Task = {
+      id: `task-${Date.now()}`,
+      name: newTaskName,
+      description: newTaskDescription,
+      points: parseInt(newTaskPoints),
+      gameId: selectedGame?.id || '',
+    };
+
+    setTasks([...tasks, newTask]);
+    setNewTaskName('');
+    setNewTaskPoints('');
+    setNewTaskDescription('');
+    setIsCreateTaskOpen(false);
+    toast({ title: 'Задача создана!', description: `"${newTaskName}" на ${newTaskPoints} XP` });
+  };
+
+  const completeTask = (taskId: string, playerId: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    setPlayers(players.map(p => 
+      p.id === playerId ? { ...p, points: p.points + task.points } : p
+    ));
+
+    setTasks(tasks.filter(t => t.id !== taskId));
+    
+    const player = players.find(p => p.id === playerId);
+    toast({ 
+      title: '✅ Задача выполнена!', 
+      description: `${player?.name} получил +${task.points} XP` 
+    });
   };
 
   const sortedPlayers = [...players].sort((a, b) => b.points - a.points);
@@ -150,42 +328,130 @@ const Index = () => {
                       Панель администратора
                     </h2>
                   </div>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button className="bg-primary hover:bg-primary/80 neon-border">
-                        <Icon name="Plus" className="mr-2" size={18} />
-                        Создать игру
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="bg-card border-primary">
-                      <DialogHeader>
-                        <DialogTitle className="text-primary">Новая игра</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label>Название игры</Label>
-                          <Input placeholder="Битва за территорию" className="bg-muted border-primary/30" />
-                        </div>
-                        <div>
-                          <Label>Количество команд</Label>
-                          <Select>
-                            <SelectTrigger className="bg-muted border-primary/30">
-                              <SelectValue placeholder="Выберите" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="2">2 команды</SelectItem>
-                              <SelectItem value="3">3 команды</SelectItem>
-                              <SelectItem value="4">4 команды</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <Button className="w-full bg-primary hover:bg-primary/80 neon-border">
-                          Создать
+                  <div className="flex gap-2">
+                    <Dialog open={isCreateGameOpen} onOpenChange={setIsCreateGameOpen}>
+                      <DialogTrigger asChild>
+                        <Button className="bg-primary hover:bg-primary/80 neon-border">
+                          <Icon name="Plus" className="mr-2" size={18} />
+                          Создать игру
                         </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                      </DialogTrigger>
+                      <DialogContent className="bg-card border-primary">
+                        <DialogHeader>
+                          <DialogTitle className="text-primary">Новая игра</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label>Название игры</Label>
+                            <Input 
+                              placeholder="Битва за территорию" 
+                              className="bg-muted border-primary/30"
+                              value={newGameName}
+                              onChange={(e) => setNewGameName(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <Label>Количество команд</Label>
+                            <Select value={newGameTeamsCount} onValueChange={setNewGameTeamsCount}>
+                              <SelectTrigger className="bg-muted border-primary/30">
+                                <SelectValue placeholder="Выберите" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="2">2 команды</SelectItem>
+                                <SelectItem value="3">3 команды</SelectItem>
+                                <SelectItem value="4">4 команды</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <Button onClick={createGame} className="w-full bg-primary hover:bg-primary/80 neon-border">
+                            Создать
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+
+                    <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" className="border-accent text-accent neon-border-accent">
+                          <Icon name="ListChecks" className="mr-2" size={18} />
+                          Задачи
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="bg-card border-accent">
+                        <DialogHeader>
+                          <DialogTitle className="text-accent">Создать задачу</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                          <div>
+                            <Label>Название задачи</Label>
+                            <Input 
+                              placeholder="Захват флага" 
+                              className="bg-muted border-accent/30"
+                              value={newTaskName}
+                              onChange={(e) => setNewTaskName(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <Label>Количество очков</Label>
+                            <Input 
+                              type="number" 
+                              placeholder="500" 
+                              className="bg-muted border-accent/30"
+                              value={newTaskPoints}
+                              onChange={(e) => setNewTaskPoints(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <Label>Описание</Label>
+                            <Textarea 
+                              placeholder="Описание задачи..." 
+                              className="bg-muted border-accent/30"
+                              value={newTaskDescription}
+                              onChange={(e) => setNewTaskDescription(e.target.value)}
+                            />
+                          </div>
+                          <Button onClick={createTask} className="w-full bg-accent hover:bg-accent/80 text-black neon-border-accent">
+                            Создать задачу
+                          </Button>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
                 </div>
+
+                {tasks.length > 0 && (
+                  <div className="mb-6 p-4 bg-accent/10 border border-accent/30 rounded-lg">
+                    <h3 className="text-accent font-semibold mb-3 flex items-center gap-2">
+                      <Icon name="Target" size={20} />
+                      Активные задачи
+                    </h3>
+                    <div className="space-y-2">
+                      {tasks.map(task => (
+                        <div key={task.id} className="flex items-center justify-between p-3 bg-muted/30 rounded">
+                          <div>
+                            <p className="font-semibold">{task.name}</p>
+                            <p className="text-sm text-muted-foreground">{task.description}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge className="bg-accent text-black">+{task.points} XP</Badge>
+                            <Select onValueChange={(playerId) => completeTask(task.id, playerId)}>
+                              <SelectTrigger className="w-[180px] bg-muted">
+                                <SelectValue placeholder="Выбрать игрока" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {players.map(player => (
+                                  <SelectItem key={player.id} value={player.id}>
+                                    {player.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-4">
                   {games.length === 0 ? (
@@ -198,61 +464,128 @@ const Index = () => {
                     </div>
                   ) : (
                     games.map((game) => (
-                      <Card key={game.id} className="p-4 bg-muted/30 border-primary/20">
-                        <div className="flex items-center justify-between">
+                      <Card key={game.id} className="p-6 bg-muted/30 border-primary/20">
+                        <div className="flex items-center justify-between mb-4">
                           <div>
-                            <h3 className="font-semibold text-lg">{game.name}</h3>
+                            <h3 className="font-bold text-2xl">{game.name}</h3>
                             <p className="text-sm text-muted-foreground">
                               {game.teams.length} команды
                             </p>
                           </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline" className="border-accent text-accent">
-                              <Icon name="Users" className="mr-2" size={16} />
-                              Игроки
-                            </Button>
-                            <Button size="sm" variant="outline" className="border-primary text-primary">
-                              <Icon name="Award" className="mr-2" size={16} />
-                              Завершить
-                            </Button>
-                          </div>
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button onClick={() => setSelectedGame(game)} size="sm" variant="outline" className="border-accent text-accent">
+                                <Icon name="Users" className="mr-2" size={16} />
+                                Управление
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="bg-card border-accent max-w-3xl">
+                              <DialogHeader>
+                                <DialogTitle className="text-accent">Управление игрой: {game.name}</DialogTitle>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div>
+                                  <h4 className="font-semibold mb-2">Добавить игроков:</h4>
+                                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-muted/30 rounded">
+                                    {players.map(player => (
+                                      <div key={player.id} className="flex items-center gap-2">
+                                        <Checkbox 
+                                          id={`player-${player.id}`}
+                                          checked={selectedPlayers.includes(player.id)}
+                                          onCheckedChange={(checked) => {
+                                            if (checked) {
+                                              setSelectedPlayers([...selectedPlayers, player.id]);
+                                            } else {
+                                              setSelectedPlayers(selectedPlayers.filter(p => p !== player.id));
+                                            }
+                                          }}
+                                        />
+                                        <label htmlFor={`player-${player.id}`} className="text-sm cursor-pointer">
+                                          {player.name}
+                                        </label>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                  {game.teams.map(team => (
+                                    <div key={team.id} className="p-4 rounded-lg" style={{ backgroundColor: `${team.color}20`, borderColor: team.color, borderWidth: 2 }}>
+                                      <div className="flex items-center justify-between mb-3">
+                                        <h4 className="font-bold" style={{ color: team.color }}>{team.name}</h4>
+                                        <Button 
+                                          size="sm" 
+                                          onClick={() => addPlayersToGame(game.id, team.id)}
+                                          style={{ backgroundColor: team.color }}
+                                          className="text-black"
+                                        >
+                                          <Icon name="Plus" size={14} />
+                                        </Button>
+                                      </div>
+                                      <div className="space-y-2">
+                                        {team.players.map(playerId => {
+                                          const player = players.find(p => p.id === playerId);
+                                          return player ? (
+                                            <div key={playerId} className="flex items-center justify-between p-2 bg-black/20 rounded">
+                                              <span className="text-sm">{player.name}</span>
+                                              <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="h-6 w-6 p-0"
+                                                onClick={() => removePlayerFromTeam(game.id, team.id, playerId)}
+                                              >
+                                                <Icon name="X" size={14} />
+                                              </Button>
+                                            </div>
+                                          ) : null;
+                                        })}
+                                        {team.players.length === 0 && (
+                                          <p className="text-xs text-muted-foreground">Нет игроков</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <div className="pt-4 border-t">
+                                  <h4 className="font-semibold mb-2">Определить победителя:</h4>
+                                  <div className="flex gap-2">
+                                    {game.teams.map(team => (
+                                      <Button
+                                        key={team.id}
+                                        onClick={() => finishGame(game.id, team.id)}
+                                        style={{ backgroundColor: team.color }}
+                                        className="flex-1 text-black font-bold"
+                                      >
+                                        {team.name} победили!
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {game.teams.map(team => (
+                            <div 
+                              key={team.id} 
+                              className="p-3 rounded-lg" 
+                              style={{ backgroundColor: `${team.color}20`, borderColor: team.color, borderWidth: 2 }}
+                            >
+                              <h4 className="font-semibold mb-1" style={{ color: team.color }}>
+                                {team.name}
+                              </h4>
+                              <p className="text-sm text-muted-foreground">
+                                {team.players.length} игроков
+                              </p>
+                            </div>
+                          ))}
                         </div>
                       </Card>
                     ))
                   )}
-                </div>
-
-                <div className="mt-6">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" className="border-accent text-accent neon-border-accent">
-                        <Icon name="ListChecks" className="mr-2" size={18} />
-                        Дополнительные задачи
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="bg-card border-accent">
-                      <DialogHeader>
-                        <DialogTitle className="text-accent">Создать задачу</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label>Название задачи</Label>
-                          <Input placeholder="Захват флага" className="bg-muted border-accent/30" />
-                        </div>
-                        <div>
-                          <Label>Количество очков</Label>
-                          <Input type="number" placeholder="500" className="bg-muted border-accent/30" />
-                        </div>
-                        <div>
-                          <Label>Описание</Label>
-                          <Textarea placeholder="Описание задачи..." className="bg-muted border-accent/30" />
-                        </div>
-                        <Button className="w-full bg-accent hover:bg-accent/80 text-black neon-border-accent">
-                          Создать задачу
-                        </Button>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
                 </div>
               </Card>
             ) : (
@@ -299,25 +632,25 @@ const Index = () => {
                   <div className="space-y-3">
                     <h3 className="text-xl font-semibold text-accent">Достижения</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      <div className="p-3 bg-muted/30 rounded-lg border border-muted text-center">
+                      <div className={`p-3 rounded-lg border text-center ${currentPlayer.points >= 5000 ? 'bg-accent/10 border-accent' : 'bg-muted/30 border-muted opacity-50'}`}>
                         <div className="text-3xl mb-1">🐺</div>
-                        <p className="text-xs text-muted-foreground">5000 XP</p>
+                        <p className={`text-xs ${currentPlayer.points >= 5000 ? 'text-accent font-bold' : 'text-muted-foreground'}`}>5000 XP</p>
                       </div>
-                      <div className="p-3 bg-muted/30 rounded-lg border border-muted text-center">
+                      <div className={`p-3 rounded-lg border text-center ${currentPlayer.points >= 10000 ? 'bg-accent/10 border-accent' : 'bg-muted/30 border-muted opacity-50'}`}>
                         <div className="text-3xl mb-1">🦈</div>
-                        <p className="text-xs text-muted-foreground">10000 XP</p>
+                        <p className={`text-xs ${currentPlayer.points >= 10000 ? 'text-accent font-bold' : 'text-muted-foreground'}`}>10000 XP</p>
                       </div>
-                      <div className="p-3 bg-muted/30 rounded-lg border border-muted text-center">
+                      <div className={`p-3 rounded-lg border text-center ${currentPlayer.points >= 15000 ? 'bg-accent/10 border-accent' : 'bg-muted/30 border-muted opacity-50'}`}>
                         <div className="text-3xl mb-1">🐉</div>
-                        <p className="text-xs text-muted-foreground">15000 XP</p>
+                        <p className={`text-xs ${currentPlayer.points >= 15000 ? 'text-accent font-bold' : 'text-muted-foreground'}`}>15000 XP</p>
                       </div>
-                      <div className="p-3 bg-muted/30 rounded-lg border border-muted text-center">
+                      <div className={`p-3 rounded-lg border text-center ${currentPlayer.points >= 20000 ? 'bg-accent/10 border-accent' : 'bg-muted/30 border-muted opacity-50'}`}>
                         <div className="text-3xl mb-1">💀👑</div>
-                        <p className="text-xs text-muted-foreground">20000 XP</p>
+                        <p className={`text-xs ${currentPlayer.points >= 20000 ? 'text-accent font-bold' : 'text-muted-foreground'}`}>20000 XP</p>
                       </div>
-                      <div className="p-3 bg-primary/10 rounded-lg border-2 border-primary neon-border text-center">
+                      <div className={`p-3 rounded-lg border text-center ${currentPlayer.points >= 25000 ? 'bg-primary/10 border-primary neon-border' : 'bg-muted/30 border-muted opacity-50'}`}>
                         <div className="text-3xl mb-1">👑🔥</div>
-                        <p className="text-xs text-primary font-bold">25000 XP</p>
+                        <p className={`text-xs ${currentPlayer.points >= 25000 ? 'text-primary font-bold' : 'text-muted-foreground'}`}>25000 XP</p>
                       </div>
                     </div>
                   </div>
